@@ -1,8 +1,12 @@
+# Source: https://github.com/vincd/samdumpy/blob/master/samdum.py
+
 from struct import unpack, pack
 import binascii
 from collections import namedtuple
 from Crypto.Hash import MD5
 from Crypto.Cipher import ARC4, DES, AES
+
+import json
 
 NK_ID = 0x6B6E
 NK_ROOT = 0x2c
@@ -279,6 +283,33 @@ def get_hashes(h, sam_key):
         print('  NT hash history:', get_hash(sam_key, user_account, rid, 15, almpassword))
         print('  NTLM hash history:', get_hash(sam_key, user_account, rid, 16, antpassword))
 
+        resetdata = h.regQueryValue(n, b'ResetData')
+        if resetdata != None:
+            security_questions = resetdata.decode('utf-16-le')
+            security_dict = json.loads(security_questions)
+            print(json.dumps(security_dict, indent=4, ensure_ascii=False))
+
+        userpasswordhint = h.regQueryValue(n, b'UserPasswordHint')
+        if userpasswordhint != None:
+            password_hint = userpasswordhint.decode('utf-16-le')
+            print(password_hint)
+
+        # online account
+        internetusername = h.regQueryValue(n, b'InternetUserName')
+        if internetusername != None:
+            email_address = internetusername.decode('utf-16-le')
+            print(email_address)
+
+        givenname = h.regQueryValue(n, b'GivenName')
+        if givenname != None:
+            first_name = givenname.decode('utf-16-le')
+            print(first_name)
+
+        surname = h.regQueryValue(n, b'Surname')
+        if surname != None:
+            last_name = surname.decode('utf-16-le')
+            print(last_name)
+
         # print(user_account[0x9c+4:0x9c+8], user_account[0x9c+16:0x9c+20], hash_offset)
         # enc_lm_hash = user_account[hash_offset+4:hash_offset+20] if lm_exists else ''
         # enc_nt_hash = user_account[hash_offset+(24 if lm_exists else 8):hash_offset+(24 if lm_exists else 8)+16] if nt_exists else ''
@@ -287,6 +318,37 @@ def get_hashes(h, sam_key):
         # ntlm_hash = decrypt_single_hash(rid, sam_key, enc_nt_hash, antpassword).encode('hex') if nt_exists else empty_nt
 
         # print(':'.join([username, str(int(regkeyname.decode('utf-8'), 16)), lm_hash, ntlm_hash]))
+
+def get_resetdata_passhint(h, sam_key):
+    almpassword = b'LMPASSWORD\0'
+    antpassword = b'NTPASSWORD\0'
+    empty_lm = 'aad3b435b51404eeaad3b435b51404ee'
+    empty_nt = '31d6cfe0d16ae931b73c59d7e0c089c0'
+
+    root_key = h.regGetRootKey()
+
+    # Registry-Pfade für ResetData und UserPasswordHint
+    user_key_path = b'SAM\\Domains\\Account\\Users\\000003E9'
+    reset_data_key = user_key_path + b'\\ResetData'
+    password_hint_key = user_key_path + b'\\UserPasswordHint'
+
+    # UserPasswordHint abrufen
+    try:
+        hint_handle = h.regOpenKey(password_hint_key)
+        user_password_hint = h.regQueryValue(hint_handle, None)
+        print(f"UserPasswordHint: {user_password_hint.decode('utf-16le')}")
+    except Exception as e:
+        print(f"Fehler beim Abrufen von UserPasswordHint: {e}")
+
+    # ResetData abrufen
+    try:
+        reset_handle = h.regOpenKey(reset_data_key)
+        reset_data = h.regQueryValue(reset_handle, None)
+        print(f"ResetData (hex): {reset_data.hex()}")
+    except Exception as e:
+        print(f"Fehler beim Abrufen von ResetData: {e}")
+
+    print(user_password_hint, reset_data)
 
 def main(argv):
     if len(argv) != 3:
@@ -304,7 +366,6 @@ def main(argv):
 
     # list users and hashes
     get_hashes(h, sam_key)
-
 
 if __name__ == "__main__":
     import sys
